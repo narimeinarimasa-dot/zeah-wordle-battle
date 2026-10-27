@@ -1,13 +1,29 @@
 import asyncio
 import json
 import os
+import random
 from aiohttp import web
 
 # 接続中のプレイヤー一覧
 CONNECTED_PLAYERS = set()
-TARGET_WORD = "CRANE"
 
-# HTML画面を返す
+# 🎯 対戦で使える英単語リスト（定番＆よく使われる5文字単語）
+WORD_LIST = [
+    "CRANE", "SLATE", "DRESS", "TRILL", "HOLEY", "PILOT", "SHIRT", "ROBOT",
+    "WATER", "LIGHT", "MUSIC", "PLANT", "SPACE", "SWEET", "HEART", "DREAM",
+    "CLOUD", "GHOST", "TRAIN", "APPLE", "HOUSE", "MOUSE", "SMILE", "PEACE",
+    "STORM", "FLAME", "MAGIC", "POWER", "NIGHT", "BEACH", "STAR"
+]
+
+# 現在の試合のお題（最初の1人が来たら選ばれる）
+CURRENT_TARGET = None
+
+def get_new_target():
+    global CURRENT_TARGET
+    CURRENT_TARGET = random.choice(WORD_LIST)
+    print(f"🎯 新しいお題決定: {CURRENT_TARGET}")
+    return CURRENT_TARGET
+
 async def index(request):
     html_path = os.path.join(os.path.dirname(__file__), "battle.html")
     if os.path.exists(html_path):
@@ -15,23 +31,33 @@ async def index(request):
             return web.Response(text=f.read(), content_type="text/html")
     return web.Response(text="battle.html not found", status=404)
 
-# WebSocket通信のハンドラ
 async def websocket_handler(request):
+    global CURRENT_TARGET
     ws = web.WebSocketResponse()
     await ws.prepare(request)
-    
+
+    # 最初のプレイヤーが来たときにお題を新しく決める
+    if len(CONNECTED_PLAYERS) == 0 or CURRENT_TARGET is None:
+        get_new_target()
+
     CONNECTED_PLAYERS.add(ws)
-    print("🎮 プレイヤー接続")
+    print(f"🎮 プレイヤー接続 (現在 {len(CONNECTED_PLAYERS)} 人)")
 
     try:
-        # 開始情報を送信
+        # 接続したプレイヤーに現在のお題を送信（2人とも同じ単語になる！）
         await ws.send_str(json.dumps({
             "type": "init",
-            "target": TARGET_WORD
+            "target": CURRENT_TARGET
         }))
 
         async for msg in ws:
             if msg.type == web.WSMsgType.TEXT:
+                data = json.loads(msg.data)
+
+                # どちらかが勝ったら、次回の試合のために新しいお題をセット！
+                if data.get("win"):
+                    get_new_target()
+
                 # 相手にブロードキャスト
                 for p in CONNECTED_PLAYERS:
                     if p != ws and not p.closed:
@@ -39,6 +65,9 @@ async def websocket_handler(request):
     finally:
         CONNECTED_PLAYERS.remove(ws)
         print("プレイヤー退出")
+        # 全員抜けたらお題をリセット
+        if len(CONNECTED_PLAYERS) == 0:
+            CURRENT_TARGET = None
 
     return ws
 
