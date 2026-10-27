@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>✨ Zeah Wordle Battle ✨</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
+    body {
+      background-color: #0b0c14; color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      min-height: 100vh; justify-content: space-between; padding: 6px;
+    }
+    header { text-align: center; margin-top: 2px; }
+    h1 { font-size: 1.2rem; color: #00d2ff; letter-spacing: 1px; }
+    .status-bar { font-size: 0.8rem; color: #7683a4; margin-top: 2px; }
+
+    .boards-wrapper {
+      display: flex; gap: 12px; justify-content: center; align-items: flex-start;
+      margin: 6px 0;
+    }
+    .board-box { text-align: center; }
+    .board-title { font-size: 0.75rem; margin-bottom: 4px; color: #00d2ff; font-weight: bold; }
+    .board-title.opp { color: #ff5252; }
+
+    .game-container { display: flex; flex-direction: column; gap: 4px; }
+    .row { display: flex; gap: 4px; }
+    .tile {
+      width: 44px; height: 44px; border: 2px solid #232738;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; font-weight: bold; border-radius: 4px; text-transform: uppercase;
+    }
+    .opp-tile {
+      width: 26px; height: 26px; border: 1px solid #232738; border-radius: 3px;
+    }
+
+    .tile[data-state="active"] { border-color: #00d2ff; }
+    .tile[data-state="correct"], .opp-tile[data-state="correct"] { background-color: #2e7d32; border-color: #2e7d32; }
+    .tile[data-state="present"], .opp-tile[data-state="present"] { background-color: #f9a825; border-color: #f9a825; color: #000; }
+    .tile[data-state="absent"], .opp-tile[data-state="absent"] { background-color: #1e202c; border-color: #1e202c; color: #555; }
+
+    .keyboard { width: 100%; max-width: 450px; display: flex; flex-direction: column; gap: 4px; }
+    .kb-row { display: flex; justify-content: center; gap: 4px; }
+    .key {
+      background-color: #202330; color: #fff; border: none; border-radius: 4px;
+      height: 44px; min-width: 28px; flex: 1; display: flex; align-items: center; justify-content: center;
+      font-size: 0.9rem; font-weight: bold; cursor: pointer; user-select: none;
+    }
+    .key.wide { flex: 1.5; font-size: 0.75rem; }
+    .key:active { background-color: #00d2ff; color: #000; }
+    .key[data-state="correct"] { background-color: #2e7d32 !important; }
+    .key[data-state="present"] { background-color: #f9a825 !important; color: #000; }
+    .key[data-state="absent"] { background-color: #14161f !important; color: #444; }
+
+    .msg-box { min-height: 20px; font-size: 0.85rem; color: #ff5252; font-weight: bold; text-align: center; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ZEAH WORDLE BATTLE</h1>
+    <div class="status-bar" id="sub-msg">サーバー接続中...</div>
+  </header>
+
+  <div class="msg-box" id="message"></div>
+
+  <div class="boards-wrapper">
+    <div class="board-box">
+      <div class="board-title">YOU</div>
+      <div class="game-container" id="my-board"></div>
+    </div>
+    <div class="board-box">
+      <div class="board-title opp">RIVAL</div>
+      <div class="game-container" id="opp-board"></div>
+    </div>
+  </div>
+
+  <div class="keyboard" id="keyboard"></div>
+
+  <script>
+    let targetWord = "CRANE";
+    let currentRow = 0;
+    let currentCol = 0;
+    let isGameOver = false;
+    const guesses = Array(6).fill("");
+    let ws = null;
+
+    const myBoard = document.getElementById("my-board");
+    for (let r = 0; r < 6; r++) {
+      const row = document.createElement("div");
+      row.className = "row";
+      for (let c = 0; c < 5; c++) {
+        const t = document.createElement("div");
+        t.className = "tile";
+        t.id = `my-${r}-${c}`;
+        row.appendChild(t);
+      }
+      myBoard.appendChild(row);
+    }
+
+    const oppBoard = document.getElementById("opp-board");
+    for (let r = 0; r < 6; r++) {
+      const row = document.createElement("div");
+      row.className = "row";
+      for (let c = 0; c < 5; c++) {
+        const t = document.createElement("div");
+        t.className = "opp-tile";
+        t.id = `opp-${r}-${c}`;
+        row.appendChild(t);
+      }
+      oppBoard.appendChild(row);
+    }
+
+    function connectWS() {
+      ws = new WebSocket("ws://localhost:8765");
+      ws.onopen = () => {
+        document.getElementById("sub-msg").textContent = "🟢 対戦サーバー接続完了！";
+      };
+      ws.onmessage = (e) => {
+        const data = JSON.parse(e.data);
+        if (data.type === "init") {
+          targetWord = data.target;
+        } else if (data.type === "guess") {
+          data.result.forEach((st, idx) => {
+            document.getElementById(`opp-${data.row}-${idx}`).setAttribute("data-state", st);
+          });
+          if (data.win) {
+            showMsg("ライバルが先に正解しました！");
+            document.getElementById("sub-msg").textContent = "❌ ライバルの勝利！";
+            isGameOver = true;
+          }
+        }
+      };
+      ws.onerror = () => {
+        document.getElementById("sub-msg").textContent = "⚠️ サーバー未接続（battle_server.pyを起動してね）";
+      };
+    }
+    connectWS();
+
+    const keyRows = [
+      ["Q","W","E","R","T","Y","U","I","O","P"],
+      ["A","S","D","F","G","H","J","K","L"],
+      ["ENTER","Z","X","C","V","B","N","M","DEL"]
+    ];
+    const kbContainer = document.getElementById("keyboard");
+    keyRows.forEach(rowKeys => {
+      const row = document.createElement("div");
+      row.className = "kb-row";
+      rowKeys.forEach(k => {
+        const btn = document.createElement("button");
+        btn.className = `key ${k.length > 1 ? "wide" : ""}`;
+        btn.textContent = k;
+        btn.id = `key-${k}`;
+        btn.onclick = () => handleInput(k);
+        row.appendChild(btn);
+      });
+      kbContainer.appendChild(row);
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (isGameOver) return;
+      let k = e.key.toUpperCase();
+      if (k === "ENTER") handleInput("ENTER");
+      else if (k === "BACKSPACE") handleInput("DEL");
+      else if (/^[A-Z]$/.test(k)) handleInput(k);
+    });
+
+    function showMsg(t) {
+      document.getElementById("message").textContent = t;
+      setTimeout(() => { document.getElementById("message").textContent = ""; }, 2500);
+    }
+
+    function handleInput(key) {
+      if (isGameOver) return;
+      if (key === "DEL") {
+        if (currentCol > 0) {
+          currentCol--;
+          guesses[currentRow] = guesses[currentRow].slice(0, -1);
+          const t = document.getElementById(`my-${currentRow}-${currentCol}`);
+          t.textContent = "";
+          t.removeAttribute("data-state");
+        }
+      } else if (key === "ENTER") {
+        if (guesses[currentRow].length < 5) {
+          showMsg("5文字入力してね！");
+          return;
+        }
+        checkGuess(guesses[currentRow]);
+      } else if (/^[A-Z]$/.test(key)) {
+        if (currentCol < 5) {
+          guesses[currentRow] += key;
+          const t = document.getElementById(`my-${currentRow}-${currentCol}`);
+          t.textContent = key;
+          t.setAttribute("data-state", "active");
+          currentCol++;
+        }
+      }
+    }
+
+    function checkGuess(guess) {
+      const targetArr = targetWord.split("");
+      const guessArr = guess.split("");
+      const result = Array(5).fill("absent");
+
+      for (let i = 0; i < 5; i++) {
+        if (guessArr[i] === targetArr[i]) {
+          result[i] = "correct";
+          targetArr[i] = null;
+        }
+      }
+      for (let i = 0; i < 5; i++) {
+        if (result[i] !== "correct" && targetArr.includes(guessArr[i])) {
+          result[i] = "present";
+          targetArr[targetArr.indexOf(guessArr[i])] = null;
+        }
+      }
+
+      for (let i = 0; i < 5; i++) {
+        document.getElementById(`my-${currentRow}-${i}`).setAttribute("data-state", result[i]);
+        const k = document.getElementById(`key-${guessArr[i]}`);
+        if (k) {
+          const cur = k.getAttribute("data-state");
+          if (result[i] === "correct") k.setAttribute("data-state", "correct");
+          else if (result[i] === "present" && cur !== "correct") k.setAttribute("data-state", "present");
+          else if (result[i] === "absent" && !cur) k.setAttribute("data-state", "absent");
+        }
+      }
+
+      const isWin = (guess === targetWord);
+
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "guess",
+          row: currentRow,
+          result: result,
+          win: isWin
+        }));
+      }
+
+      if (isWin) {
+        showMsg("🎉 YOU WIN！！相手より先に正解したよ！！");
+        document.getElementById("sub-msg").textContent = "🏆 勝利！！";
+        isGameOver = true;
+      } else {
+        currentRow++;
+        currentCol = 0;
+        if (currentRow === 6) {
+          showMsg(`終了！正解は ${targetWord} でした`);
+          isGameOver = true;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
