@@ -112,7 +112,15 @@
     }
 
     function connectWS() {
-      ws = new WebSocket("ws://localhost:8765");
+      // 🌐 PC・スマホ・Renderどこでも自動で最適なWebSocketURLを作る！
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      // Renderなら /ws に繋ぎ、ローカルなら 8765 に繋ぐ
+      const wsUrl = host.includes("onrender.com")
+        ? `${protocol}//${host}/ws`
+        : "ws://localhost:8765";
+
+      ws = new WebSocket(wsUrl);
       ws.onopen = () => {
         document.getElementById("sub-msg").textContent = "🟢 対戦サーバー接続完了！";
       };
