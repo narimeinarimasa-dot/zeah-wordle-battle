@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>✨ Zeah Wordle Battle ✨</title>
+  <title>✨ Zeta Wordle Battle ✨</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; touch-action: manipulation; }
     body {
@@ -15,6 +15,22 @@
     header { text-align: center; margin-top: 2px; }
     h1 { font-size: 1.2rem; color: #00d2ff; letter-spacing: 1px; }
     .status-bar { font-size: 0.8rem; color: #7683a4; margin-top: 2px; }
+
+    /* 合言葉モーダル */
+    #room-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(11, 12, 20, 0.95);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      z-index: 100; gap: 12px; padding: 20px;
+    }
+    #room-input {
+      padding: 12px; font-size: 1.2rem; border-radius: 8px; border: 2px solid #00d2ff;
+      background: #1a1c24; color: #fff; text-align: center; width: 220px; outline: none;
+    }
+    #join-btn {
+      padding: 10px 24px; font-size: 1rem; font-weight: bold; border-radius: 8px;
+      border: none; background: #00d2ff; color: #000; cursor: pointer;
+    }
 
     .boards-wrapper {
       display: flex; gap: 12px; justify-content: center; align-items: flex-start;
@@ -31,9 +47,7 @@
       display: flex; align-items: center; justify-content: center;
       font-size: 1.4rem; font-weight: bold; border-radius: 4px; text-transform: uppercase;
     }
-    .opp-tile {
-      width: 26px; height: 26px; border: 1px solid #232738; border-radius: 3px;
-    }
+    .opp-tile { width: 26px; height: 26px; border: 1px solid #232738; border-radius: 3px; }
 
     .tile[data-state="active"] { border-color: #00d2ff; }
     .tile[data-state="correct"], .opp-tile[data-state="correct"] { background-color: #2e7d32; border-color: #2e7d32; }
@@ -57,9 +71,16 @@
   </style>
 </head>
 <body>
+  <!-- 合言葉画面 -->
+  <div id="room-overlay">
+    <h2 style="color: #00d2ff;">合言葉を入力してね！</h2>
+    <input type="text" id="room-input" placeholder="例: nari" maxlength="10">
+    <button id="join-btn" onclick="joinRoom()">対戦スタート！</button>
+  </div>
+
   <header>
-    <h1>ZEAH WORDLE BATTLE</h1>
-    <div class="status-bar" id="sub-msg">サーバー接続中...</div>
+    <h1>ZETA WORDLE BATTLE</h1>
+    <div class="status-bar" id="sub-msg">合言葉待機中...</div>
   </header>
 
   <div class="msg-box" id="message"></div>
@@ -84,6 +105,7 @@
     let isGameOver = false;
     const guesses = Array(6).fill("");
     let ws = null;
+    let currentRoom = "";
 
     const myBoard = document.getElementById("my-board");
     for (let r = 0; r < 6; r++) {
@@ -111,10 +133,23 @@
       oppBoard.appendChild(row);
     }
 
+    function joinRoom() {
+      const input = document.getElementById("room-input").value.trim();
+      if (!input) return alert("合言葉を入力してね！");
+      currentRoom = input;
+      document.getElementById("room-overlay").style.display = "none";
+      connectWS();
+    }
+
     function connectWS() {
-      ws = new WebSocket("ws://localhost:8765");
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.host;
+      const wsUrl = host.includes("onrender.com") ? `${protocol}//${host}/ws` : "ws://localhost:8765";
+
+      ws = new WebSocket(wsUrl);
       ws.onopen = () => {
-        document.getElementById("sub-msg").textContent = "🟢 対戦サーバー接続完了！";
+        document.getElementById("sub-msg").textContent = `🟢 ルーム「${currentRoom}」で対戦中！`;
+        ws.send(JSON.stringify({ type: "join", room: currentRoom }));
       };
       ws.onmessage = (e) => {
         const data = JSON.parse(e.data);
@@ -131,11 +166,7 @@
           }
         }
       };
-      ws.onerror = () => {
-        document.getElementById("sub-msg").textContent = "⚠️ サーバー未接続（battle_server.pyを起動してね）";
-      };
     }
-    connectWS();
 
     const keyRows = [
       ["Q","W","E","R","T","Y","U","I","O","P"],
